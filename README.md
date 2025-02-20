@@ -143,7 +143,8 @@ https://en.wikipedia.org/wiki/Breadth-first_search
 
 __________________________________
 Алт. запуск
-или запустить готовый exe файл из архива 
+или запустить готовый exe файл из архива https://drive.google.com/file/d/1ubwwTu2Mz67b6X60gk5oy54kJinD6yUY/view?usp=sharing
+p.s там не будут работать цвета как там нет ansi для коректной работы !!!
 
 ---
 
