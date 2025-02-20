@@ -12,30 +12,27 @@ namespace Labirint
         static char player = 'P'; // Символ игрока
         static char goal = 'G'; // Символ цели
         static char hunter = 'H'; // Символ обычного охотника
-        static char minerHunter = 'T'; // Символ охотника-шахтёра
         static char trail = '.'; // Символ следа игрока
         static Random random = new Random();
         static int playerX = 1; // Начальная позиция игрока
         static int playerY = 1; // Начальная позиция игрока
         static int hunterX = 1; // Начальная позиция обычного охотника
         static int hunterY = 1; // Начальная позиция обычного охотника
-        static int minerHunterX = 1; // Начальная позиция охотника-шахтёра
-        static int minerHunterY = 1; // Начальная позиция охотника-шахтёра
         static (int dx, int dy) lastDirection = (0, 0); // Последнее направление движения игрока
         static int goalX, goalY; // Позиция цели
         static int achievements = 0; // Счетчик достижений
+        static int maxAchievements = 0; // Максимальное количество очков
+        static int wallsBroken = 0; // Количество сломанных стен
+        static int mazesCompleted = 0; // Количество пройденных лабиринтов
+        static int mazesRegenerated = 0; // Количество сбросов лабиринта
         static char[,] maze; // Лабиринт
         static int width, height; // Размеры лабиринта
         static bool hunterActive = false; // Флаг активности обычного охотника
-        static bool minerHunterActive = false; // Флаг активности охотника-шахтёра
         static int hunterWaitTime = 0; // Время ожидания обычного охотника после спавна
-        static int minerHunterWaitTime = 0; // Время ожидания охотника-шахтёра после спавна
         static int lastPlayerX = 1; // Последняя позиция игрока по X
         static int lastPlayerY = 1; // Последняя позиция игрока по Y
         static int hunterMoveCooldown = 0; // Счетчик для ограничения скорости обычного охотника
-        static int minerHunterMoveCooldown = 0; // Счетчик для ограничения скорости охотника-шахтёра
-        static double hunterSpeed = 1.0; // Скорость обычного охотника
-        static double minerHunterSpeed = 1.0; // Скорость охотника-шахтёра
+        static double hunterSpeed = 1.0; // Скорость обычного охотника (1.0 = стандартная скорость)
 
         static void Main(string[] args)
         {
@@ -107,9 +104,16 @@ namespace Labirint
                             MovePlayer(1, 0, ref maze, ref width, ref height);
                             break;
                         case ConsoleKey.Y:
-                            BreakWall(maze);
-                            UpdateHunterSpeed(); // Обновляем скорость охотников
-                            DisplayMaze(maze);
+                            if (achievements >= -10)
+                            {
+                                BreakWall(maze);
+                                UpdateHunterSpeed(); // Обновляем скорость охотника
+                                DisplayMaze(maze);
+                            }
+                            else
+                            {
+                                Console.WriteLine("Вы не можете копать стены при достижениях ниже -10.");
+                            }
                             break;
                         case ConsoleKey.R:
                             RegenerateMazeWithWindowSize(ref maze, ref width, ref height); // Перегенерация лабиринта с учетом размера окна
@@ -133,22 +137,11 @@ namespace Labirint
                         MoveHunter(ref maze);
                     }
 
-                    if (minerHunterWaitTime > 0)
-                    {
-                        minerHunterWaitTime--;
-                        if (minerHunterWaitTime == 0)
-                        {
-                            minerHunterActive = true;
-                        }
-                    }
-                    else if (minerHunterActive)
-                    {
-                        MoveMinerHunter(ref maze);
-                    }
-
                     Thread.Sleep(50); // Небольшая задержка для уменьшения нагрузки
                 }
             }
+
+            EndGame();
         }
 
         static void PrintCentered(string text)
@@ -251,10 +244,6 @@ namespace Labirint
                     {
                         sb.Append("\u001b[31mH\u001b[0m"); // Красный цвет для обычного охотника
                     }
-                    else if (i == minerHunterY && j == minerHunterX && minerHunterActive)
-                    {
-                        sb.Append("\u001b[33mT\u001b[0m"); // Жёлтый цвет для охотника-шахтёра
-                    }
                     else if (maze[i, j] == wall)
                     {
                         sb.Append("\u001b[90m#\u001b[0m"); // Серый цвет для стен
@@ -279,10 +268,11 @@ namespace Labirint
                 sb.AppendLine();
             }
 
-            if (hunterWaitTime > 0 || minerHunterWaitTime > 0)
+            // Индикатор времени ожидания охотника
+            if (hunterWaitTime > 0)
             {
-                int waitCubes = 3 - Math.Max(hunterWaitTime, minerHunterWaitTime) / 20;
-                sb.AppendLine($"Достижения: {achievements} | Охотники активируются через: [{new string('\u2588', waitCubes)}{new string(' ', 3 - waitCubes)}]");
+                int waitCubes = 3 - (hunterWaitTime / 20); // 3 секунды * 20 циклов в секунду (50 мс задержка)
+                sb.AppendLine($"Достижения: {achievements} | Охотник активируется через: [{new string('\u2588', waitCubes)}{new string(' ', 3 - waitCubes)}]");
             }
             else
             {
@@ -304,13 +294,15 @@ namespace Labirint
                     if (maze[newY, newX] == goal)
                     {
                         achievements++;
+                        maxAchievements = Math.Max(maxAchievements, achievements);
+                        mazesCompleted++;
                         Console.WriteLine("Вы достигли цели! Достижения: " + achievements);
 
                         maze[playerY, playerX] = trail; // Оставляем след на месте цели
                         RegenerateMaze(ref maze, ref width, ref height); // Перегенерация лабиринта
                         SetGoal(maze); // Устанавливаем новую цель
 
-                        // Обновляем скорость охотников
+                        // Обновляем скорость охотника
                         UpdateHunterSpeed();
                     }
 
@@ -319,14 +311,10 @@ namespace Labirint
                     playerY = newY;
                     maze[playerY, playerX] = trail; // Оставляем след игрока
 
-                    // Активируем охотников при определенных условиях
+                    // Активируем охотника после достижения 5 очков
                     if (achievements >= 5 && !hunterActive && hunterWaitTime == 0)
                     {
                         ActivateHunter(ref maze);
-                    }
-                    if (achievements <= -5 && !minerHunterActive && minerHunterWaitTime == 0)
-                    {
-                        ActivateMinerHunter(ref maze);
                     }
                 }
             }
@@ -338,6 +326,7 @@ namespace Labirint
         {
             if (!hunterActive && hunterWaitTime == 0)
             {
+                // Находим первую точку следа (trail)
                 for (int i = 0; i < maze.GetLength(0); i++)
                 {
                     for (int j = 0; j < maze.GetLength(1); j++)
@@ -352,19 +341,10 @@ namespace Labirint
                     }
                 }
 
+                // Если следов нет, охотник появляется на последней позиции игрока
                 hunterX = lastPlayerX;
                 hunterY = lastPlayerY;
                 hunterWaitTime = 60; // 3 секунды * 20 циклов в секунду (50 мс задержка)
-            }
-        }
-
-        static void ActivateMinerHunter(ref char[,] maze)
-        {
-            if (!minerHunterActive && minerHunterWaitTime == 0)
-            {
-                minerHunterX = lastPlayerX;
-                minerHunterY = lastPlayerY;
-                minerHunterWaitTime = 30; // 1.5 секунды * 20 циклов в секунду (50 мс задержка)
             }
         }
 
@@ -375,9 +355,10 @@ namespace Labirint
             if (hunterMoveCooldown > 0)
             {
                 hunterMoveCooldown--;
-                return;
+                return; // Охотник ждет, пока счетчик не достигнет нуля
             }
 
+            // Найдем ближайший след игрока
             (int, int)? closestTrail = null;
             int minDistance = int.MaxValue;
 
@@ -402,6 +383,7 @@ namespace Labirint
                 int targetX = closestTrail.Value.Item1;
                 int targetY = closestTrail.Value.Item2;
 
+                // Определяем направление движения охотника
                 int dx = Math.Sign(targetX - hunterX);
                 int dy = Math.Sign(targetY - hunterY);
 
@@ -418,103 +400,36 @@ namespace Labirint
                         }
                         hunterX = newX;
                         hunterY = newY;
-                    }
-                }
-            }
 
-            hunterMoveCooldown = (int)(5 / hunterSpeed); // Базовое значение cooldown = 5
-        }
-
-        static void MoveMinerHunter(ref char[,] maze)
-        {
-            if (!minerHunterActive) return;
-
-            if (minerHunterMoveCooldown > 0)
-            {
-                minerHunterMoveCooldown--;
-                return;
-            }
-
-            Queue<(int x, int y, int steps)> queue = new Queue<(int x, int y, int steps)>();
-            bool[,] visited = new bool[maze.GetLength(0), maze.GetLength(1)];
-
-            queue.Enqueue((minerHunterX, minerHunterY, 0));
-            visited[minerHunterY, minerHunterX] = true;
-
-            int[] dx = { 1, -1, 0, 0 };
-            int[] dy = { 0, 0, 1, -1 };
-
-            (int targetX, int targetY, int steps)? closestPath = null;
-
-            while (queue.Count > 0)
-            {
-                var (currentX, currentY, steps) = queue.Dequeue();
-
-                if (currentX == playerX && currentY == playerY)
-                {
-                    closestPath = (currentX, currentY, steps);
-                    break;
-                }
-
-                for (int i = 0; i < 4; i++)
-                {
-                    int newX = currentX + dx[i];
-                    int newY = currentY + dy[i];
-
-                    if (newX >= 0 && newX < maze.GetLength(1) &&
-                        newY >= 0 && newY < maze.GetLength(0) &&
-                        !visited[newY, newX])
-                    {
-                        visited[newY, newX] = true;
-
-                        if (maze[newY, newX] == path || maze[newY, newX] == trail || maze[newY, newX] == goal)
+                        // Проверяем, догнал ли охотник игрока
+                        if (newX == playerX && newY == playerY)
                         {
-                            queue.Enqueue((newX, newY, steps + 1));
-                        }
-                        else if (maze[newY, newX] == wall && !(IsBoundary(newX, newY, maze)))
-                        {
-                            queue.Enqueue((newX, newY, steps + 1));
-                        }
-                    }
-                }
-            }
+                            achievements -= 5;
+                            Console.WriteLine("Охотник догнал вас! Достижения: " + achievements);
 
-            if (closestPath.HasValue)
-            {
-                int targetX = closestPath.Value.targetX;
-                int targetY = closestPath.Value.targetY;
+                            // Перегенерация лабиринта
+                            RegenerateMaze(ref maze, ref width, ref height);
+                            SetGoal(maze);
+                            DisplayMaze(maze);
 
-                for (int i = 0; i < 4; i++)
-                {
-                    int newX = minerHunterX + dx[i];
-                    int newY = minerHunterY + dy[i];
-
-                    if (newX >= 0 && newX < maze.GetLength(1) &&
-                        newY >= 0 && newY < maze.GetLength(0))
-                    {
-                        if (newX == targetX && newY == targetY)
-                        {
-                            if (maze[newY, newX] == wall && !(IsBoundary(newX, newY, maze)))
+                            // Активируем охотника после достижения 5 очков
+                            if (achievements >= 5 && !hunterActive && hunterWaitTime == 0)
                             {
-                                maze[newY, newX] = path; // Копаем стену
+                                ActivateHunter(ref maze);
                             }
-                            else if (maze[newY, newX] == path || maze[newY, newX] == trail)
+
+                            // Проверяем, достиг ли игрок -10 очков
+                            if (achievements <= -10)
                             {
-                                minerHunterX = newX;
-                                minerHunterY = newY;
+                                EndGame();
                             }
-                            break;
                         }
                     }
                 }
             }
 
-            minerHunterMoveCooldown = (int)(5 / minerHunterSpeed); // Базовое значение cooldown = 5
-        }
-
-        static bool IsBoundary(int x, int y, char[,] maze)
-        {
-            return x == 0 || x == maze.GetLength(1) - 1 || y == 0 || y == maze.GetLength(0) - 1;
+            // Обновляем cooldown в зависимости от скорости охотника
+            hunterMoveCooldown = Math.Max(1, (int)(5 / hunterSpeed)); // Минимальный cooldown = 1
         }
 
         static void RegenerateMaze(ref char[,] maze, ref int width, ref int height)
@@ -522,31 +437,32 @@ namespace Labirint
             int maxConsoleWidth = Console.WindowWidth - 2; // Учитываем границы окна
             int maxConsoleHeight = Console.WindowHeight - 3; // Учитываем границы окна и строку для счета
 
+            // Сохраняем последнюю позицию игрока
             lastPlayerX = playerX;
             lastPlayerY = playerY;
 
+            // Увеличиваем размер лабиринта
             width = Math.Min(width + 2, maxConsoleWidth);
             height = Math.Min(height + 2, maxConsoleHeight);
 
+            // Создаем новый лабиринт с новыми размерами
             maze = GenerateMaze(width, height);
-            playerX = 1;
+            playerX = 1; // Возвращаем игрока к начальной позиции
             playerY = 1;
 
+            // Охотник появляется на последней позиции игрока
             hunterX = lastPlayerX;
             hunterY = lastPlayerY;
 
-            minerHunterX = lastPlayerX;
-            minerHunterY = lastPlayerY;
-
+            // Деактивируем охотника и сбрасываем время ожидания
             hunterActive = false;
-            minerHunterActive = false;
-            hunterWaitTime = 60;
-            minerHunterWaitTime = 30;
+            hunterWaitTime = 60; // 3 секунды * 20 циклов в секунду (50 мс задержка)
 
+            // Сбрасываем скорость охотника и cooldown
             hunterSpeed = 1.0;
-            minerHunterSpeed = 1.0;
             hunterMoveCooldown = 0;
-            minerHunterMoveCooldown = 0;
+
+            mazesRegenerated++;
         }
 
         static void RegenerateMazeWithWindowSize(ref char[,] maze, ref int width, ref int height)
@@ -554,31 +470,32 @@ namespace Labirint
             int maxConsoleWidth = Console.WindowWidth - 2; // Учитываем границы окна
             int maxConsoleHeight = Console.WindowHeight - 3; // Учитываем границы окна и строку для счета
 
+            // Сохраняем последнюю позицию игрока
             lastPlayerX = playerX;
             lastPlayerY = playerY;
 
+            // Устанавливаем размеры лабиринта в соответствии с размерами окна
             width = Math.Max(11, maxConsoleWidth); // Минимальная ширина 11
             height = Math.Max(11, maxConsoleHeight); // Минимальная высота 11
 
+            // Создаем новый лабиринт с новыми размерами
             maze = GenerateMaze(width, height);
-            playerX = 1;
+            playerX = 1; // Возвращаем игрока к начальной позиции
             playerY = 1;
 
+            // Охотник появляется на последней позиции игрока
             hunterX = lastPlayerX;
             hunterY = lastPlayerY;
 
-            minerHunterX = lastPlayerX;
-            minerHunterY = lastPlayerY;
-
+            // Деактивируем охотника и сбрасываем время ожидания
             hunterActive = false;
-            minerHunterActive = false;
-            hunterWaitTime = 60;
-            minerHunterWaitTime = 30;
+            hunterWaitTime = 60; // 3 секунды * 20 циклов в секунду (50 мс задержка)
 
+            // Сбрасываем скорость охотника и cooldown
             hunterSpeed = 1.0;
-            minerHunterSpeed = 1.0;
             hunterMoveCooldown = 0;
-            minerHunterMoveCooldown = 0;
+
+            mazesRegenerated++;
         }
 
         static void BreakWall(char[,] maze)
@@ -597,9 +514,10 @@ namespace Labirint
                 {
                     maze[y, x] = path; // Ломаем стену
                     achievements--; // Уменьшаем достижения на 1
+                    wallsBroken++;
                     Console.WriteLine("Стена сломана! Текущие достижения: " + achievements);
 
-                    // Обновляем скорость охотников
+                    // Обновляем скорость охотника
                     UpdateHunterSpeed();
                     return;
                 }
@@ -609,17 +527,35 @@ namespace Labirint
 
         static void UpdateHunterSpeed()
         {
+            // Замедление при положительных достижениях
             if (achievements > 0)
             {
                 hunterSpeed = Math.Max(0.2, 1.0 - (achievements / 10.0) * 0.2); // Минимальная скорость 0.2
-                minerHunterSpeed = Math.Max(0.2, 1.0 - (achievements / 10.0) * 0.2); // Минимальная скорость 0.2
             }
 
+            // Ускорение при отрицательных достижениях
             if (achievements < 0)
             {
                 hunterSpeed = Math.Min(2.0, 1.0 + (-achievements / 5.0) * 0.4); // Максимальная скорость 2.0
-                minerHunterSpeed = Math.Min(2.0, 1.0 + (-achievements / 5.0) * 0.4); // Максимальная скорость 2.0
             }
+        }
+
+        static void EndGame()
+        {
+            Console.Clear();
+            Console.ForegroundColor = ConsoleColor.Gray;
+            PrintCentered("Игра окончена!");
+            Console.WriteLine();
+            PrintCentered($"Количество пройденных лабиринтов: {mazesCompleted}");
+            PrintCentered($"Максимальное количество очков: {maxAchievements}");
+            PrintCentered($"Количество сломанных стен: {wallsBroken}");
+            PrintCentered($"Количество сбросов лабиринта: {mazesRegenerated}");
+            PrintCentered($"Размер лабиринта: {width}x{height}");
+            Console.ResetColor();
+            Console.WriteLine();
+            PrintCentered("Нажмите любую клавишу для выхода...");
+            Console.ReadKey(true);
+            Environment.Exit(0);
         }
     }
 }
