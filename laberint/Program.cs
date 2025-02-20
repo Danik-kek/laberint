@@ -27,6 +27,8 @@ namespace Labirint
         static int hunterWaitTime = 0; // Время ожидания охотника после спавна
         static int lastPlayerX = 1; // Последняя позиция игрока по X
         static int lastPlayerY = 1; // Последняя позиция игрока по Y
+        static int hunterMoveCooldown = 0; // Счетчик для ограничения скорости охотника
+        static double hunterSpeed = 1.0; // Скорость охотника (1.0 = стандартная скорость)
 
         static void Main(string[] args)
         {
@@ -65,7 +67,7 @@ namespace Labirint
             Console.WriteLine("S - вниз");
             Console.WriteLine("D - вправо");
             Console.WriteLine("Y - сломать стену");
-            Console.WriteLine("R - перегенерировать лабиринт с учётом размера окна");
+            Console.WriteLine("R - перегенерировать лабиринт с учетом размера окна");
             Console.WriteLine("Q - выйти из игры");
             Console.WriteLine("\nНажмите любую клавишу для продолжения...");
             Console.ReadKey(true);
@@ -99,10 +101,11 @@ namespace Labirint
                             break;
                         case ConsoleKey.Y:
                             BreakWall(maze);
+                            UpdateHunterSpeed(); // Обновляем скорость охотника
                             DisplayMaze(maze);
                             break;
                         case ConsoleKey.R:
-                            RegenerateMazeWithWindowSize(ref maze, ref width, ref height); // Перегенерация лабиринта с учётом размера окна
+                            RegenerateMazeWithWindowSize(ref maze, ref width, ref height); // Перегенерация лабиринта с учетом размера окна
                             SetGoal(maze); // Устанавливаем новую цель
                             DisplayMaze(maze);
                             break;
@@ -122,6 +125,7 @@ namespace Labirint
                     {
                         MoveHunter(ref maze);
                     }
+
                     Thread.Sleep(50); // Небольшая задержка для уменьшения нагрузки
                 }
             }
@@ -269,6 +273,7 @@ namespace Labirint
         {
             int newX = playerX + dx;
             int newY = playerY + dy;
+
             if (newX >= 0 && newX < maze.GetLength(1) && newY >= 0 && newY < maze.GetLength(0))
             {
                 if (maze[newY, newX] == path || maze[newY, newX] == goal || maze[newY, newX] == trail)
@@ -277,30 +282,66 @@ namespace Labirint
                     {
                         achievements++;
                         Console.WriteLine("Вы достигли цели! Достижения: " + achievements);
+
                         maze[playerY, playerX] = trail; // Оставляем след на месте цели
                         RegenerateMaze(ref maze, ref width, ref height); // Перегенерация лабиринта
                         SetGoal(maze); // Устанавливаем новую цель
+
+                        // Обновляем скорость охотника
+                        UpdateHunterSpeed();
                     }
+
                     lastDirection = (dx, dy);
                     playerX = newX;
                     playerY = newY;
                     maze[playerY, playerX] = trail; // Оставляем след игрока
 
-                    // Активируем охотника после достижения 5 очков 
+                    // Активируем охотника после достижения 5 очков
                     if (achievements >= 5 && !hunterActive && hunterWaitTime == 0)
                     {
-                        hunterX = playerX;
-                        hunterY = playerY;
-                        hunterWaitTime = 60; // 3 секунды * 20 циклов в секунду (50 мс задержка)
+                        ActivateHunter(ref maze);
                     }
                 }
             }
+
             DisplayMaze(maze);
+        }
+
+        static void ActivateHunter(ref char[,] maze)
+        {
+            if (!hunterActive && hunterWaitTime == 0)
+            {
+                // Находим первую точку следа (trail)
+                for (int i = 0; i < maze.GetLength(0); i++)
+                {
+                    for (int j = 0; j < maze.GetLength(1); j++)
+                    {
+                        if (maze[i, j] == trail)
+                        {
+                            hunterX = j;
+                            hunterY = i;
+                            hunterWaitTime = 60; // 3 секунды * 20 циклов в секунду (50 мс задержка)
+                            return;
+                        }
+                    }
+                }
+
+                // Если следов нет, охотник появляется на последней позиции игрока
+                hunterX = lastPlayerX;
+                hunterY = lastPlayerY;
+                hunterWaitTime = 60; // 3 секунды * 20 циклов в секунду (50 мс задержка)
+            }
         }
 
         static void MoveHunter(ref char[,] maze)
         {
             if (!hunterActive) return;
+
+            if (hunterMoveCooldown > 0)
+            {
+                hunterMoveCooldown--;
+                return; // Охотник ждет, пока счетчик не достигнет нуля
+            }
 
             // Найдем ближайший след игрока
             (int, int)? closestTrail = null;
@@ -348,6 +389,9 @@ namespace Labirint
                 }
             }
 
+            // Обновляем cooldown в зависимости от скорости охотника
+            hunterMoveCooldown = (int)(5 / hunterSpeed); // Базовое значение cooldown = 5
+
             DisplayMaze(maze);
         }
 
@@ -356,7 +400,7 @@ namespace Labirint
             int maxConsoleWidth = Console.WindowWidth - 2; // Учитываем границы окна
             int maxConsoleHeight = Console.WindowHeight - 3; // Учитываем границы окна и строку для счета
 
-            // Сохраняем текущую позицию игрока
+            // Сохраняем последнюю позицию игрока
             lastPlayerX = playerX;
             lastPlayerY = playerY;
 
@@ -376,6 +420,10 @@ namespace Labirint
             // Деактивируем охотника и сбрасываем время ожидания
             hunterActive = false;
             hunterWaitTime = 60; // 3 секунды * 20 циклов в секунду (50 мс задержка)
+
+            // Сбрасываем скорость охотника и cooldown
+            hunterSpeed = 1.0;
+            hunterMoveCooldown = 0;
         }
 
         static void RegenerateMazeWithWindowSize(ref char[,] maze, ref int width, ref int height)
@@ -383,7 +431,7 @@ namespace Labirint
             int maxConsoleWidth = Console.WindowWidth - 2; // Учитываем границы окна
             int maxConsoleHeight = Console.WindowHeight - 3; // Учитываем границы окна и строку для счета
 
-            // Сохраняем текущую позицию игрока
+            // Сохраняем последнюю позицию игрока
             lastPlayerX = playerX;
             lastPlayerY = playerY;
 
@@ -403,6 +451,10 @@ namespace Labirint
             // Деактивируем охотника и сбрасываем время ожидания
             hunterActive = false;
             hunterWaitTime = 60; // 3 секунды * 20 циклов в секунду (50 мс задержка)
+
+            // Сбрасываем скорость охотника и cooldown
+            hunterSpeed = 1.0;
+            hunterMoveCooldown = 0;
         }
 
         static void BreakWall(char[,] maze)
@@ -420,18 +472,29 @@ namespace Labirint
                 if (x > 0 && x < maze.GetLength(1) - 1 && y > 0 && y < maze.GetLength(0) - 1 && maze[y, x] == wall)
                 {
                     maze[y, x] = path; // Ломаем стену
-                    Console.WriteLine("Стена сломана!");
+                    achievements--; // Уменьшаем достижения на 1
+                    Console.WriteLine("Стена сломана! Текущие достижения: " + achievements);
+
+                    // Обновляем скорость охотника
+                    UpdateHunterSpeed();
                     return;
                 }
             }
             Console.WriteLine("Невозможно сломать стену здесь.");
         }
 
-        static void CheckAchievements()
+        static void UpdateHunterSpeed()
         {
-            if (achievements >= 5)
+            // Замедление при положительных достижениях
+            if (achievements > 0)
             {
-                Console.WriteLine("Поздравляем! Вы достигли 5 целей!");
+                hunterSpeed = Math.Max(0.2, 1.0 - (achievements / 10.0) * 0.2); // Минимальная скорость 0.2
+            }
+
+            // Ускорение при отрицательных достижениях
+            if (achievements < 0)
+            {
+                hunterSpeed = Math.Min(2.0, 1.0 + (-achievements / 5.0) * 0.4); // Максимальная скорость 2.0
             }
         }
     }
